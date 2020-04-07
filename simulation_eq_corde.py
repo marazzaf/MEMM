@@ -62,55 +62,6 @@ def euler_implicit(f, x_old, dt,
 
     return newton(res, x_old, jac_res, rtol, atol, maxiter)
 
-# Runge-Kutta 2
-def runge_kutta2(f, x_old, dt, *args, **kwargs):
-    x_m = x_old+0.5*dt*f(x_old)
-    return x_old+dt*f(x_m)
-
-# Euler symplectique
-def euler_symplectic(f, X_old, dt, *args, **kwargs):
-    N = len(X_old)
-    if N%2 == 0:
-        N = N/2
-    else:
-        raise RuntimeError('Odd size', N)
-    N = int(N)
-    x_old = X_old[0:N]
-    v_old = X_old[N:(2*N)]
-    v_new = v_old+dt*f(X_old)[N:(2*N)]
-    x_new = x_old+dt*f(np.append(x_old,v_new))[0:N]
-    return np.append(x_new,v_new)
-
-# Newmark
-class newmark:
-    def __init__(self, beta=0.25, gamma=0.5):
-        self.beta = beta
-        self.gamma = gamma
-
-    def __call__(self, f, X_old, dt, jac=None,
-                 rtol=1E-5, atol=1E-10, maxiter=100):
-        identity = np.eye(X_old.shape[-1])
-
-        N = len(X_old)
-        if N%2 == 0:
-            N = N/2
-        else:
-            raise RuntimeError('Odd size', N)
-        N = int(N)
-        
-        def res(X):
-            return np.append(X[0:N]-X_old[0:N]-dt*X_old[N:2*N]-0.5*dt**2*((1-2*self.beta)*f(X_old)[N:2*N] + 2*self.beta*f(X)[N:2*N]), np.zeros(N))
-            
-        def res_jac(X):
-            return identity-self.beta*dt**2*jac(X)
-
-        
-        x_old = X_old[0:N]
-        v_old = X_old[N:2*N]
-        X_new = newton(res, X_old, res_jac, rtol, atol, maxiter)
-        X_new[N:2*N] = v_old+dt*((1-self.gamma)*f(X_old)[N:2*N]+self.gamma*f(X_new)[N:2*N])
-        return X_new
-
 # Integration numerique par points de Gauss-Legendre
 def integrale_gauss_1(f,a,b):
     return (b-a)*f((a+b)/2.)
@@ -172,115 +123,37 @@ def ode_solve(f, x0, t, method, jac=None, rtol=1E-5, atol=1E-10, maxiter=100):
         t_old = t_new
     return x
 
-# Methode arc-length : renvoie la liste des points stables et instables a partir d'une donnee initiale (x0,mu0), dans une direction initiale de recherche (dx0,dmu0), sur une longueur L, avec un pas de taille ds
-def arc_length(f, x0, mu0, dx0, dmu0, L, ds, jac_x, jac_mu, rtol=1E-5, atol=1E-10, maxiter=100):
-    # Taille des vecteurs x0 et mu0
-    N_x = len(x0)
-    N_mu = 1
-    
-    # Initialisation aux conditions initiales
-    x_old = x0;
-    mu_old = mu0
-    x_old = newton(f,x0,jac_x,rtol,atol,maxiter) #Modification eventuelle du point de depart, si x0 n'est pas point d'equilibre pour le parametre mu0
-    dx = dx0;
-    dmu = dmu0;
-    
-    # Normalisation de la direction de recherche
-    norm = np.linalg.norm(np.append(dx, dmu))
-    if norm>0:
-        dx = dx/norm*ds
-        dmu = dmu/norm*ds
-    else:
-        raise RuntimeError('The search direction is null', np.array([dx, dmu]))
-    
-    stable = np.array([]);
-    instable = np.array([]);
-    # Determination de la stabilite ou l'instabilite du point initial
-    A = jac_x(x_old,mu_old)
-    # Valeur propre avec la partie reelle maximale
-    eigenvalues,eigenvectors = np.linalg.eig(A)
-    eigenvalue = max(np.real(eigenvalues))
-    
-    # Test de la valeur propre
-    if eigenvalue<=0:
-        if len(stable)>0:
-            stable = np.column_stack((stable,np.append(x_old,mu_old)));
-        else:
-            stable = np.append(x_old,mu_old)
-    else:
-        if len(instable)>0:
-            instable = np.column_stack((instable,np.append(x_old,mu_old)));
-        else:
-            instable = np.append(x_old,mu_old)
-    # Nombre de pas
-    N = int(math.ceil(L/ds))
-    # Iterations
-    for i in range(N):
-        # Definition du probleme G a resoudre
-        def G(X):
-            x_new = X[0:N_x]
-            mu_new = X[N_x:N_x+N_mu]
-            return np.append(f(x_new, mu_new), np.linalg.norm(x_new-x_old)**2+np.linalg.norm(mu_new-mu_old)**2-ds**2)
-        
-        # Definition du Jacobien de G
-        def J_G(X):
-            x_new = X[0:N_x]
-            mu_new = X[N_x:N_x+N_mu]
-            return np.bmat([[jac_x(x_new,mu_new), jac_mu(x_new,mu_new)] , [np.array([2*np.transpose(x_new-x_old)]), np.array([2*np.transpose(mu_new-mu_old)])]])
-        
-        # Resolution du probleme G par la methode de Newton-Raphson
-        X = newton(G,np.append(x_old+dx,np.array([mu_old+dmu])),J_G,rtol,atol,maxiter)
-        x_new = X[0:N_x]
-        mu_new = X[N_x:N_x+N_mu]
-        # Determination de la stabilite ou l'instabilite des points
-        A = jac_x(x_new,mu_new)
-        # Valeur propre avec la partie reelle maximale
-        eigenvalues,eigenvectors = np.linalg.eig(A)
-        eigenvalue = max(np.real(eigenvalues))
-        
-        # Test de la valeur propre
-        if eigenvalue<=0:
-            if len(stable)>0:
-                stable = np.column_stack((stable,np.append(x_old,mu_old)));
-            else:
-                stable = np.append(x_old,mu_old)
-        else:
-            if len(instable)>0:
-                instable = np.column_stack((instable,np.append(x_old,mu_old)));
-            else:
-                instable = np.append(x_old,mu_old)
-        # Mise a jour des points
-        dx = x_new-x_old
-        dmu = mu_new - mu_old
-        x_old = x_new
-        mu_old = mu_new
-    
-
-    return stable, instable
-
-
-# Definition des systemes a integrer et de leurs jacobiens
-
-class barres:
-    def __init__(self, m, l, k, theta0, Pstar):
-        self.m = m
-        self.l = l
-        self.k = k
-        self.theta0 = theta0
-        self.Pstar = Pstar
-
-    def __call__(self, x, Pstar=None):
-        if Pstar is None:
-            Pstar = self.Pstar
-        return np.array([x[1], 1./(2.*m*l)*(-2./math.tan(x[0])*x[1]**2 - k*l/math.sin(x[0])*(Pstar/2./math.tan(x[0])+2.*(math.cos(theta0)-math.cos(x[0]))))])
-
 # Definition des matrices de masse et de rigidite de la corde
+
+#1d domain
+dx = 0.01
+nb_elements = int(1 / dx)
+mesh = UnitIntervalMesh(nb_elements) #1d string
+boundary = MeshFunction("size_t", mesh, mesh.topology().dim() - 1)
+
+#2d function space
+U = FiniteElement("Lagrange", mesh.ufl_cell(), 1) #P1 Lagrange FE
+
+U_aux = U * U
+V = FunctionSpace(mesh, U_aux) #mix space for approximation of horizontal and vertical displacement
+Vx,Vy = V.sub(0),V.sub(1) #horizontal displacement, vertical displacement
+
+#material parameters
+rho = 1.
+alpha = 0. #linear case #0.3 mild non-linear #0.99 strongly non-linear
+
 
 #Matrice de masse
 def matrice_masse_corde(n, h, rho):
     Mh = 2./3.*h * sp.identity(n) + 1./6.*h * (sp.eye(n,k=1) + sp.eye(n,k=-1))
     Mh = rho*Mh
     return Mh
+
+#mass matrix
+u = TrialFunction(V)
+v = TestFunction(V)
+m = rho * (u[0] * v[0] + u[1] * v[1]) * dx
+mass_matrix = assemble(m)
 
 #Matrice donnant un gradient discret
 def Dh(n, h):
@@ -294,6 +167,8 @@ def K(vecteur, alpha):
     quotient = np.linalg.norm(full_vector)
     return vecteur - alpha*full_vector / quotient
     #return vecteur
+
+h = truc
                                                 
 def dh_star_K_dh(Uh, h, alpha):
     D = Dh(N, h)
@@ -302,6 +177,20 @@ def dh_star_K_dh(Uh, h, alpha):
     DT = D.transpose()
     dx_K_dx_Uh = -np.concatenate((DT.dot(K_dx_Uh[0:N+1]), DT.dot(K_dx_Uh[N+1:2*(N+1)])), axis=0)
     return dx_K_dx_Uh
+
+#boundary conditions
+def left(x, on_boundary):
+    return near(x[0], 0.) and on_boundary
+
+def right(x, on_boundary):
+    return near(x[0], 1.) and on_boundary
+
+#boundary.set_all(0)
+#left_boundary = AutoSubDomain(left)
+#left_boundary.mark(boundary_subdomains, 1)
+#right_boundary = AutoSubDomain(right)
+#right_boundary.mark(boundary_subdomains, 2)
+bc = [DirichletBC(V, Constant((0.,0.)), left), DirichletBC(V, Constant((0.,0.)), right)] #on encastre sur les 2 bords...
 
 # Fonction f pour la corde
 class corde:
@@ -318,32 +207,6 @@ class corde:
         Mh = rho*matrice_masse_corde(N, self.h, self.rho)
         dx_K_dx_Uh = dh_star_K_dh(Uh, self.h, self.alpha)
         return np.concatenate( (Wh, np.concatenate( (spsolve(Mh, dx_K_dx_Uh[0:N]), spsolve(Mh, dx_K_dx_Uh[N:2*N])), axis = 0)), axis=0)
-
-class jac_barres:
-    def __init__(self, m, l, k, theta0, Pstar):
-        self.m = m
-        self.l = l
-        self.k = k
-        self.theta0 = theta0
-        self.Pstar = Pstar
-
-    def __call__(self, x, Pstar=None):
-        if Pstar is None:
-            Pstar = self.Pstar
-        return np.array([[0, 1], [1./(2.*m*l)*(2./math.sin(x[0])**2*x[1]**2 + k*l*math.cos(x[0])/math.sin(x[0])**2*(Pstar/2./math.tan(x[0])+2.*(math.cos(theta0)-math.cos(x[0]))) - k*l/math.sin(x[0])*(-Pstar/2./math.sin(x[0])**2+2.*math.sin(x[0]))),  1./(2.*m*l)*(-4./math.tan(x[0])*x[1])]])
-
-class jac_Pstar_barres:
-    def __init__(self, m, l, k, theta0, Pstar):
-        self.m = m
-        self.l = l
-        self.k = k
-        self.theta0 = theta0
-        self.Pstar = Pstar
-
-    def __call__(self, x, Pstar=None):
-        if Pstar is None:
-            Pstar = self.Pstar
-        return np.array([[0], [1./(2.*m*l)*( - k*l/math.sin(x[0])/2./math.tan(x[0]))]])
 
     
 # Tests numeriques
@@ -375,12 +238,6 @@ nbprint = 100
 method = monasse
 # Systeme a integrer (systemeI ou systemeII)
 systeme = corde(h, N, rho, E, alpha)
-# Jacobien du systeme a integrer (jacI ou jacII)
-#jac = jac_barres(m, l, k, theta0, Pstar)
-# Derivee du systeme par rapport au parametre
-#jac_mu = jac_Pstar_barres(m, l, k, theta0, Pstar)
-# Energie associee au systeme a integrer (energieI ou energieII)
-#energie = energie_pendule
 
 
 # Integration
