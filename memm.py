@@ -40,6 +40,8 @@ bc = DirichletBC(U, Constant((0,0)), bnd)
 #Solving the problem
 solve(a == l, u, bc)
 
+x = max(np.abs(u.vector()))
+
 ##Plot the solution
 #plot(u[1])
 #plt.show()
@@ -67,7 +69,7 @@ K = as_backend_type(K).mat()
 #K.setType('dense')
 #K = K.getDenseArray() #numpy array
 
-N = 1000
+N = 10000
 dt = sqrt(mu/nu)
 
 plot(u[1])
@@ -85,6 +87,7 @@ for n in range(N-1):
     u_hat.vector()[:] = u.vector()[:] + 0.5 * dt  * vel1.vector()[:]
 
     u.vector()[:] += dt * vel1.vector()[:]
+    assert np.abs(u.vector()).max() < 10*x
     bc.apply(u.vector())
     plot(u[1])
     plt.savefig('u' + str(n+1) + '.png')
@@ -94,11 +97,15 @@ for n in range(N-1):
 
     #velocity
     
-    energy = 0.5 * (1 - alpha) * inner(u_hat[0].dx(0), u_hat[0].dx(0)) * dx + 0.5 * inner(u_hat[1].dx(0), u_hat[1].dx(0)) * dx
-    integral = grad(energy) * dt
+    # energy = 0.5 * (1 - alpha) * inner(u_hat[0].dx(0), u_hat[0].dx(0)) * dx + 0.5 * inner(u_hat[1].dx(0), u_hat[1].dx(0)) * dx
+    # a = derivative(energy, u_hat, v)
+    # a = replace(a,{u_hat:du})
+    # A = assemble(a)
+    # A = as_backend_type(A).mat()
+    integral = - K * u_hat.vector().vec() * dt
 
     vel.vector()[:] = vel1.vector()[:]
-    vel1.vector()[:] = vel2.vector()[:] - 2 * integral / M
+    vel1.vector()[:] = vel2.vector()[:] + 2 * integral / M
     vel2.vector()[:] = vel.vector()[:]
     bc.apply(vel1.vector())
     #print(np.amax(x))
