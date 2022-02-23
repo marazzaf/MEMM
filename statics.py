@@ -8,7 +8,6 @@ from mpl_toolkits.mplot3d import Axes3D
 import sys
 
 alpha = 0 #alpha \in [0,1)
-u0 = 0.3 #0.1 #0.01
 
 size = 20
 mesh = UnitIntervalMesh(size)
@@ -28,12 +27,18 @@ energy = 0.5 * (1 - alpha) * inner(u[0].dx(0), u[0].dx(0)) * dx + 0.5 * inner(u[
 a = derivative(energy,u,v)
 a = replace(a,{u:du})
 
+#linear form
+l = Constant(1) * v[1] * dx
+
 #Defining boundaries
 def bnd(x, on_boundary):
     return on_boundary
 
 #Boundary conditions
 bc = DirichletBC(U, Constant((0,0)), bnd)
+
+#Solving the problem
+solve(a == l, u, bc)
 
 ##Plot the solution
 #plot(u[1])
@@ -61,14 +66,6 @@ nu = eigensolver.get_eigenpair(0)[0]
 K = as_backend_type(K).mat()
 #K.setType('dense')
 #K = K.getDenseArray() #numpy array
-
-#initial conditions
-ref_y = Expression('u0 * sin(2*pi*x[0])', u0=u0, degree=1)
-u = project(as_vector((0, ref_y)), U)
-
-##plot IC
-#plot(u[1])
-#plt.show()
 
 dt = sqrt(mu/nu)
 N = int(0.44/dt)+1
